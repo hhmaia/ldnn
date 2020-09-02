@@ -8,10 +8,9 @@ from src.initializers import *
 from src.ldnn_utils import create_batches_generator
 
 
-def compute_cost(AL, Y, loss=binary_crossentropy):
+def compute_cost(AL, Y, W, loss=binary_crossentropy, l2_lambda=0.0):
     m = Y.shape[1]
-
-    cost = (1 / m) * np.sum(loss(AL, Y))
+    cost = (1 / m) * np.sum(loss(AL, Y)) - ((l2_lambda/(2*m)) * np.square(W).sum())
     cost = cost.squeeze()
     assert cost.shape == ()
     return cost
@@ -56,10 +55,10 @@ def backward_activation(dA, cache, activation_derivative):
     return dZ
 
 
-def backward_linear(dZ, linear_cache):
+def backward_linear(dZ, linear_cache, l2_lambda=0.0):
     A_prev, W, b = linear_cache
     m = A_prev.shape[1]
-    dW = 1 / m * np.dot(dZ, A_prev.T)
+    dW = 1 / m * (np.dot(dZ, A_prev.T) + (l2_lambda * W))
     db = 1 / m * np.sum(dZ, axis=1, keepdims=True)
     dA_prev = np.dot(W.T, dZ)
 
@@ -140,6 +139,7 @@ def l_layer_model_train(X, Y,
                         output_layer_activation=sigmoid,
                         weights_initializer=xavier_init,
                         loss=binary_crossentropy,
+                        l2_lambda=0.0,
                         print_costs=False):
     assert X.shape[1] == Y.shape[1]
 
@@ -155,7 +155,7 @@ def l_layer_model_train(X, Y,
                                          params,
                                          hidden_layers_activation=hidden_layers_activation,
                                          output_layer_activation=output_layer_activation)
-            batch_costs.append(compute_cost(AL, y_batch, loss))
+            batch_costs.append(compute_cost(AL, y_batch, params['W'], loss))
             grads = l_model_backward(AL, y_batch, caches,
                                      hidden_layers_activation=hidden_layers_activation,
                                      output_layer_activation=output_layer_activation)
