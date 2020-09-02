@@ -2,8 +2,8 @@ import os
 import numpy as np
 import h5py
 import matplotlib.pyplot as plt
-from src.Ldnn import l_model_forward, l_layer_model_train
-
+from src.ldnn import l_model_forward, l_layer_model_train
+from src.ldnn_utils import plot_costs
 
 def load_data():
     train_dataset = h5py.File(os.getcwd().replace('src', '') + '/data/train_catvnoncat.h5', "r")
@@ -39,11 +39,12 @@ train_x_orig, train_y, test_x_orig, test_y, classes = load_data()
 train_x = np.reshape(train_x_orig, (train_x_orig.shape[0], -1)).T/255.
 test_x = np.reshape(test_x_orig, (test_x_orig.shape[0], -1)).T/255.
 
-params = l_layer_model_train(train_x, train_y,
+params, costs = l_layer_model_train(train_x, train_y,
                     [train_x.shape[0], 20, 7, 5, 1],
                     epochs=30000,
                     learning_rate=0.002,
                     print_costs=True)
+plot_costs(costs)
 
 predictions = predict(test_x, test_y, params)
 
