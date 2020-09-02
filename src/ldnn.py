@@ -5,6 +5,7 @@ from functools import partial
 from src.activations import *
 from src.losses import *
 from src.initializers import *
+from src.ldnn_utils import create_batches_generator
 
 
 def compute_cost(AL, Y, loss=binary_crossentropy):
@@ -133,29 +134,36 @@ def update_parameters(parameters, grads, learning_rate):
 def l_layer_model_train(X, Y,
                         layer_dims,
                         epochs,
+                        batch_size=32,
                         learning_rate=.0075,
                         hidden_layers_activation=relu,
                         output_layer_activation=sigmoid,
                         weights_initializer=xavier_init,
                         loss=binary_crossentropy,
                         print_costs=False):
+    assert X.shape[1] == Y.shape[1]
+
     params = initialize_parameters(layer_dims, weights_initializer)
     costs = []
 
+    batches = list(create_batches_generator(X, Y, batch_size))
+
     for epoch in range(epochs):
-        AL, caches = l_model_forward(X, params,
+        batch_costs = []
+        for x_batch, y_batch in batches:
+            AL, caches = l_model_forward(x_batch,
+                                         params,
+                                         hidden_layers_activation=hidden_layers_activation,
+                                         output_layer_activation=output_layer_activation)
+            batch_costs.append(compute_cost(AL, y_batch, loss))
+            grads = l_model_backward(AL, y_batch, caches,
                                      hidden_layers_activation=hidden_layers_activation,
                                      output_layer_activation=output_layer_activation)
-
-        cost = compute_cost(AL, Y, loss)
-        grads = l_model_backward(AL, Y, caches,
-                                 hidden_layers_activation=hidden_layers_activation,
-                                 output_layer_activation=output_layer_activation)
-
-        params = update_parameters(params, grads, learning_rate)
-        costs.append(cost)
+            params = update_parameters(params, grads, learning_rate)
+        epoch_cost = np.mean(batch_costs).squeeze()
+        costs.append(epoch_cost)
         # Print the cost every 100 training example
         if print_costs and epoch % 100 == 0:
-            print("Cost after epoch %i: %f" % (epoch, cost))
+            print("Cost after epoch %i: %f" % (epoch, epoch_cost))
 
     return params, costs
