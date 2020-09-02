@@ -8,9 +8,13 @@ from src.initializers import *
 from src.ldnn_utils import create_batches_generator
 
 
-def compute_cost(AL, Y, W, loss=binary_crossentropy, l2_lambda=0.0):
+def compute_cost(AL, Y, params, l2_lambda, loss=binary_crossentropy):
     m = Y.shape[1]
-    cost = (1 / m) * np.sum(loss(AL, Y)) - ((l2_lambda/(2*m)) * np.square(W).sum())
+    l2_reg_term = 0
+    for l in params:
+        l2_reg_term += np.square(params[l]['W']).sum()
+
+    cost = (1 / m) * np.sum(loss(AL, Y)) + ((l2_lambda/(2*m))*l2_reg_term)
     cost = cost.squeeze()
     assert cost.shape == ()
     return cost
@@ -55,7 +59,7 @@ def backward_activation(dA, cache, activation_derivative):
     return dZ
 
 
-def backward_linear(dZ, linear_cache, l2_lambda=0.0):
+def backward_linear(dZ, linear_cache, l2_lambda):
     A_prev, W, b = linear_cache
     m = A_prev.shape[1]
     dW = 1 / m * (np.dot(dZ, A_prev.T) + (l2_lambda * W))
@@ -69,10 +73,10 @@ def backward_linear(dZ, linear_cache, l2_lambda=0.0):
     return dA_prev, dW, db
 
 
-def backward_linear_activation(dA, cache, activation_derivative):
+def backward_linear_activation(dA, cache, activation_derivative, l2_lambda):
     linear_cache, activation_cache = cache
     dZ = backward_activation(dA, activation_cache, activation_derivative)
-    dA_prev, dW, db = backward_linear(dZ, linear_cache)
+    dA_prev, dW, db = backward_linear(dZ, linear_cache, l2_lambda)
     return dA_prev, dW, db
 
 
@@ -96,7 +100,7 @@ def l_model_forward(X,
     return AL, caches
 
 
-def l_model_backward(AL, Y, caches,
+def l_model_backward(AL, Y, caches, l2_lambda,
                      hidden_layers_activation=relu,
                      output_layer_activation=sigmoid):
     grads = {}
@@ -109,14 +113,16 @@ def l_model_backward(AL, Y, caches,
     dAL = binary_crossentropy(AL, Y, derivative=True)
     grads[L - 1]['dA'], grads[L]['dW'], grads[L]['db'] = \
         backward_linear_activation(dAL, current_cache,
-                                   partial(output_layer_activation, derivative=True))
+                                   partial(output_layer_activation, derivative=True),
+                                   l2_lambda)
 
     # For L-2 to 0 (penultimate layer to first layer)
     for l in reversed(range(L - 1)):
         current_cache = caches[l]
         grads[l]['dA'], grads[l + 1]['dW'], grads[l + 1]['db'] = \
             backward_linear_activation(grads[l + 1]['dA'], current_cache,
-                                       partial(hidden_layers_activation, derivative=True))
+                                       partial(hidden_layers_activation, derivative=True),
+                                       l2_lambda)
 
     return grads
 
@@ -151,14 +157,13 @@ def l_layer_model_train(X, Y,
     for epoch in range(epochs):
         batch_costs = []
         for x_batch, y_batch in batches:
-            AL, caches = l_model_forward(x_batch,
-                                         params,
-                                         hidden_layers_activation=hidden_layers_activation,
-                                         output_layer_activation=output_layer_activation)
-            batch_costs.append(compute_cost(AL, y_batch, params['W'], loss))
-            grads = l_model_backward(AL, y_batch, caches,
-                                     hidden_layers_activation=hidden_layers_activation,
-                                     output_layer_activation=output_layer_activation)
+            AL, caches = l_model_forward(x_batch, params,
+                                         hidden_layers_activation,
+                                         output_layer_activation)
+            batch_costs.append(compute_cost(AL, y_batch, params, l2_lambda, loss))
+            grads = l_model_backward(AL, y_batch, caches, l2_lambda,
+                                     hidden_layers_activation,
+                                     output_layer_activation)
             params = update_parameters(params, grads, learning_rate)
         epoch_cost = np.mean(batch_costs).squeeze()
         costs.append(epoch_cost)

@@ -41,9 +41,10 @@ test_x = np.reshape(test_x_orig, (test_x_orig.shape[0], -1)).T/255.
 
 params, costs = l_layer_model_train(train_x, train_y,
                     [train_x.shape[0], 20, 7, 5, 1],
-                    epochs=1000,
+                    epochs=3000,
                     learning_rate=0.002,
                     batch_size=16,
+                    l2_lambda=0.1,
                     print_costs=True)
 plot_costs(costs)
 
