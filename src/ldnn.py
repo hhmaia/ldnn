@@ -1,3 +1,4 @@
+import time
 from typing import Callable, Any
 
 import numpy as np
@@ -9,11 +10,25 @@ from src.ldnn_utils import create_batches_generator
 
 
 def compute_cost(AL, Y, params, l2_lambda, loss=binary_crossentropy):
+    """
+
+    :param AL: output matrix of the model
+    :param Y: input labels
+    :param params: dictionary containing W and b matrices
+    :param l2_lambda: l2 regularization parameter
+    :param loss: function to be used on loss calculation
+    :return: float cost, associated with the current outputs of the network
+    """
+
+    # number of examples
     m = Y.shape[1]
+    # computation of Frobenius norm for W
     l2_reg_term = 0
     for l in params:
         l2_reg_term += np.square(params[l]['W']).sum()
 
+    # average of the loss plus l2 regularization term. l2_lambda == 0 means
+    # no regularization
     cost = (1 / m) * np.sum(loss(AL, Y)) + ((l2_lambda/(2*m))*l2_reg_term)
     cost = cost.squeeze()
     assert cost.shape == ()
@@ -21,6 +36,24 @@ def compute_cost(AL, Y, params, l2_lambda, loss=binary_crossentropy):
 
 
 def initialize_parameters(n_dims: Any, weights_initializer: Callable[[int, int], Any], seed=1):
+    """
+    :param n_dims: number of units in each layer of the network, including
+     the input layer.
+    :param weights_initializer: function used to create and initialize the
+     weights matrix
+    :param seed: seed for the random number generation
+    :return: dictionary containing L layers, where L is equal to len(n_dims) - 1.
+     Each layer is also a dictionary containing the keys 'W' and 'b', witch are
+     the weights and bias matrix.
+
+     Ex:
+        >>> params = initialize_parameters([2, 2, 1], xavier_init)
+        >>> params.keys()
+        dict_keys([1, 2])
+        >>> params[1].keys()
+        dict_keys(['W', 'b'])
+    """
+
     np.random.seed(seed)
     params = {}
     for l in range(1, len(n_dims)):
@@ -33,6 +66,15 @@ def initialize_parameters(n_dims: Any, weights_initializer: Callable[[int, int],
 
 
 def forward_linear(A, W, b):
+    """
+
+    :param A: inputs for the current layer, can be X (network input)
+     or the activation from the previous layer.
+    :param W: weights matrix for the layer
+    :param b: bias matrix for the layer
+    :return Z: output for the layer (before the activation)
+    :return cache: A, W and b inputs to be used on other computations
+    """
     Z = np.dot(W, A) + b
     cache = (A, W, b)
     return Z, cache
@@ -42,6 +84,7 @@ def forward_linear_activation(A_prev, W, b, activation=sigmoid):
     assert (W.shape[0] == b.shape[0])
     assert (A_prev.shape[0] == W.shape[1])
 
+    # linear_cache is (A_prev, W, b)
     Z, linear_cache = forward_linear(A_prev, W, b)
     A = activation(Z)
 
@@ -49,6 +92,7 @@ def forward_linear_activation(A_prev, W, b, activation=sigmoid):
     assert (A.shape == (W.shape[0], A_prev.shape[1]))
 
     activation_cache = Z
+    # cache is (Z, A_prev, W, b)
     cache = (linear_cache, activation_cache)
     return A, cache
 
@@ -152,11 +196,14 @@ def l_layer_model_train(X, Y,
     params = initialize_parameters(layer_dims, weights_initializer)
     costs = []
 
+    # shuffle and partition X and Y into batches
     batches = list(create_batches_generator(X, Y, batch_size))
 
     for epoch in range(epochs):
         batch_costs = []
+        batch_times = []
         for x_batch, y_batch in batches:
+            batch_start_time = time.time()
             AL, caches = l_model_forward(x_batch, params,
                                          hidden_layers_activation,
                                          output_layer_activation)
@@ -165,10 +212,15 @@ def l_layer_model_train(X, Y,
                                      hidden_layers_activation,
                                      output_layer_activation)
             params = update_parameters(params, grads, learning_rate)
+            batch_end_time = time.time()
+            batch_times.append(batch_end_time - batch_start_time)
         epoch_cost = np.mean(batch_costs).squeeze()
+        epoch_running_time = np.sum(batch_times).astype(float)
+        batch_running_mean_time = np.mean(batch_times).astype(float)
         costs.append(epoch_cost)
         # Print the cost every 100 training example
         if print_costs and epoch % 100 == 0:
-            print("Cost after epoch %i: %f" % (epoch, epoch_cost))
+            print("Cost after epoch %i: %f - Batch time: %f, Epoch time: %f" %
+                  (epoch, epoch_cost, batch_running_mean_time, epoch_running_time))
 
     return params, costs
