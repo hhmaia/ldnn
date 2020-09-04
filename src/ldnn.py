@@ -3,10 +3,11 @@ from typing import Callable, Any
 
 import numpy as np
 from functools import partial
-from src.activations import *
-from src.losses import *
-from src.initializers import *
+
+from src.activations import sigmoid, relu
+from src.initializers import xavier_init
 from src.ldnn_utils import create_batches_generator
+from src.losses import binary_crossentropy
 
 
 def compute_cost(AL, Y, params, l2_lambda, loss=binary_crossentropy):
@@ -29,13 +30,15 @@ def compute_cost(AL, Y, params, l2_lambda, loss=binary_crossentropy):
 
     # average of the loss plus l2 regularization term. l2_lambda == 0 means
     # no regularization
-    cost = (1 / m) * np.sum(loss(AL, Y)) + ((l2_lambda/(2*m))*l2_reg_term)
+    cost = (1 / m) * np.sum(loss(AL, Y)) + ((l2_lambda / (2 * m)) * l2_reg_term)
     cost = cost.squeeze()
     assert cost.shape == ()
     return cost
 
 
-def initialize_parameters(n_dims: Any, weights_initializer: Callable[[int, int], Any], seed=1):
+def initialize_parameters(n_dims: Any,
+                          weights_initializer: Callable[[int, int], Any],
+                          seed=1):
     """
     :param n_dims: number of units in each layer of the network, including
      the input layer.
@@ -80,7 +83,7 @@ def forward_linear(A, W, b):
     return Z, cache
 
 
-def forward_linear_activation(A_prev, W, b, activation=sigmoid):
+def forward_linear_activation(A_prev, W, b, activation):
     assert (W.shape[0] == b.shape[0])
     assert (A_prev.shape[0] == W.shape[1])
 
@@ -134,10 +137,18 @@ def l_model_forward(X,
 
     for l in range(1, L):
         A_prev = A
-        A, cache = forward_linear_activation(A_prev, params[l]['W'], params[l]['b'], hidden_layers_activation)
+        A, cache = forward_linear_activation(
+            A_prev,
+            params[l]['W'],
+            params[l]['b'],
+            hidden_layers_activation)
         caches.append(cache)
 
-    AL, cache = forward_linear_activation(A, params[L]['W'], params[L]['b'], output_layer_activation)
+    AL, cache = forward_linear_activation(
+        A,
+        params[L]['W'],
+        params[L]['b'],
+        output_layer_activation)
     caches.append(cache)
 
     assert (AL.shape == (1, X.shape[1]))
@@ -145,28 +156,34 @@ def l_model_forward(X,
 
 
 def l_model_backward(AL, Y, caches, l2_lambda,
-                     hidden_layers_activation=relu,
-                     output_layer_activation=sigmoid):
-    grads = {}
+                     hidden_layers_activation,
+                     output_layer_activation):
     L = len(caches)
-
+    grads = {}
     for layer in range(L + 1):
         grads[layer] = {}
 
+    # output layer pass
     current_cache = caches[L - 1]
     dAL = binary_crossentropy(AL, Y, derivative=True)
+    ol_activation_d = partial(output_layer_activation, derivative=True)
     grads[L - 1]['dA'], grads[L]['dW'], grads[L]['db'] = \
-        backward_linear_activation(dAL, current_cache,
-                                   partial(output_layer_activation, derivative=True),
-                                   l2_lambda)
+        backward_linear_activation(
+            dAL,
+            current_cache,
+            ol_activation_d,
+            l2_lambda)
 
     # For L-2 to 0 (penultimate layer to first layer)
+    hl_activation_d = partial(hidden_layers_activation, derivative=True)
     for l in reversed(range(L - 1)):
         current_cache = caches[l]
         grads[l]['dA'], grads[l + 1]['dW'], grads[l + 1]['db'] = \
-            backward_linear_activation(grads[l + 1]['dA'], current_cache,
-                                       partial(hidden_layers_activation, derivative=True),
-                                       l2_lambda)
+            backward_linear_activation(
+                grads[l + 1]['dA'],
+                current_cache,
+                hl_activation_d,
+                l2_lambda)
 
     return grads
 
@@ -180,6 +197,24 @@ def update_parameters(parameters, grads, learning_rate):
     return parameters
 
 
+def optimization_single_pass(x_batch, y_batch, params,
+                             learning_rate,
+                             l2_lambda,
+                             loss,
+                             hl_activation,
+                             ol_activation):
+    batch_start_time = time.time()
+    AL, caches = l_model_forward(x_batch, params, hl_activation, ol_activation)
+    grads = l_model_backward(AL, y_batch, caches, l2_lambda, hl_activation,
+                             ol_activation)
+    cost = compute_cost(AL, y_batch, params, l2_lambda, loss)
+    params = update_parameters(params, grads, learning_rate)
+    batch_end_time = time.time()
+    running_time = batch_end_time - batch_start_time
+
+    return params, cost, running_time
+
+
 def l_layer_model_train(X, Y,
                         layer_dims,
                         epochs,
@@ -191,6 +226,22 @@ def l_layer_model_train(X, Y,
                         loss=binary_crossentropy,
                         l2_lambda=0.0,
                         print_costs=False):
+    """
+
+    :param X:
+    :param Y:
+    :param layer_dims:
+    :param epochs:
+    :param batch_size:
+    :param learning_rate:
+    :param hidden_layers_activation:
+    :param output_layer_activation:
+    :param weights_initializer:
+    :param loss:
+    :param l2_lambda:
+    :param print_costs:
+    :return:
+    """
     assert X.shape[1] == Y.shape[1]
 
     params = initialize_parameters(layer_dims, weights_initializer)
@@ -203,24 +254,25 @@ def l_layer_model_train(X, Y,
         batch_costs = []
         batch_times = []
         for x_batch, y_batch in batches:
-            batch_start_time = time.time()
-            AL, caches = l_model_forward(x_batch, params,
-                                         hidden_layers_activation,
-                                         output_layer_activation)
-            batch_costs.append(compute_cost(AL, y_batch, params, l2_lambda, loss))
-            grads = l_model_backward(AL, y_batch, caches, l2_lambda,
-                                     hidden_layers_activation,
-                                     output_layer_activation)
-            params = update_parameters(params, grads, learning_rate)
-            batch_end_time = time.time()
-            batch_times.append(batch_end_time - batch_start_time)
+            params, cost, rt = optimization_single_pass(
+                x_batch,
+                y_batch,
+                params,
+                learning_rate,
+                l2_lambda,
+                loss,
+                hidden_layers_activation,
+                output_layer_activation)
+            batch_costs.append(cost)
+            batch_times.append(rt)
+
         epoch_cost = np.mean(batch_costs).squeeze()
-        epoch_running_time = np.sum(batch_times).astype(float)
-        batch_running_mean_time = np.mean(batch_times).astype(float)
+        epoch_time = np.sum(batch_times).astype(float)
+        batch_mean_time = np.mean(batch_times).astype(float)
         costs.append(epoch_cost)
         # Print the cost every 100 training example
         if print_costs and epoch % 100 == 0:
             print("Cost after epoch %i: %f - Batch time: %f, Epoch time: %f" %
-                  (epoch, epoch_cost, batch_running_mean_time, epoch_running_time))
+                  (epoch, epoch_cost, batch_mean_time, epoch_time))
 
     return params, costs

@@ -2,7 +2,7 @@ import os
 import numpy as np
 import matplotlib.pyplot as plt
 
-
+# TODO: create a more general generator
 def create_batches_generator(x, y, batch_size, shuffle=True):
     assert x.shape[1] == y.shape[1]
     m = x.shape[1]
