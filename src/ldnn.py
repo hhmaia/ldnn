@@ -46,7 +46,7 @@ def initialize_parameters(n_dims: Any,
      weights matrix
     :param seed: seed for the random number generation
     :return: dictionary containing L layers, where L is equal to len(n_dims) - 1.
-     Each layer is also a dictionary containing the keys 'W' and 'b', witch are
+     Each layer is also a dictionary containing the keys 'W' and 'b', which are
      the weights and bias matrix.
 
      Ex:
